@@ -13,8 +13,6 @@ from tqdm import tqdm
 from transformers import AutoConfig, AutoModel
 from transformers import AutoTokenizer
 
-from pytorch_transformers.tokenization_bert import BertTokenizer
-
 from blink.common.ranker_base import BertEncoder, get_model_obj
 from blink.common.optimizer import get_bert_optimizer
 from blink.common.params import BERT_START_TOKEN, BERT_END_TOKEN

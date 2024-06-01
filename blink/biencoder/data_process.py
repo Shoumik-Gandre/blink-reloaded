@@ -10,8 +10,6 @@ import torch
 from tqdm import tqdm, trange
 from torch.utils.data import DataLoader, TensorDataset
 
-from pytorch_transformers.tokenization_bert import BertTokenizer
-
 from blink.biencoder.zeshel_utils import world_to_id
 from blink.common.params import ENT_START_TAG, ENT_END_TAG, ENT_TITLE_TAG
 from blink.common.params import BERT_START_TOKEN, BERT_END_TOKEN

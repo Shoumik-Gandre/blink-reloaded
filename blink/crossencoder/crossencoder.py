@@ -12,24 +12,10 @@ import torch.nn.functional as F
 
 from collections import OrderedDict
 from tqdm import tqdm
-from pytorch_transformers.modeling_utils import CONFIG_NAME, WEIGHTS_NAME
+from transformers import CONFIG_NAME, WEIGHTS_NAME
 
 from transformers import AutoConfig, AutoModel
 from transformers import AutoTokenizer
-
-from pytorch_transformers.modeling_bert import (
-    BertPreTrainedModel,
-    BertConfig,
-    BertModel,
-)
-
-from pytorch_transformers.modeling_roberta import (
-    RobertaConfig,
-    RobertaModel,
-)
-
-from pytorch_transformers.tokenization_bert import BertTokenizer
-from pytorch_transformers.tokenization_roberta import RobertaTokenizer
 
 from blink.common.ranker_base import BertEncoder, get_model_obj
 from blink.common.optimizer import get_bert_optimizer

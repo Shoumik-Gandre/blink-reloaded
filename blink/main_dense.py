@@ -7,6 +7,7 @@
 import argparse
 import json
 import sys
+from typing import Optional
 
 from tqdm import tqdm
 import logging
@@ -26,7 +27,7 @@ from blink.biencoder.data_process import (
 import blink.candidate_ranking.utils as utils
 from blink.crossencoder.train_cross import modify, evaluate
 from blink.crossencoder.data_process import prepare_crossencoder_data
-from blink.indexer.faiss_indexer import DenseFlatIndexer, DenseHNSWFlatIndexer
+from blink.indexer.faiss_indexer import DenseFlatIndexer, DenseHNSWFlatIndexer, DenseIndexer
 
 
 HIGHLIGHTS = [
@@ -234,7 +235,7 @@ def _process_biencoder_dataloader(samples, tokenizer, biencoder_params):
     return dataloader
 
 
-def _run_biencoder(biencoder, dataloader, candidate_encoding, top_k=100, indexer=None):
+def _run_biencoder(biencoder: BiEncoderRanker, dataloader: DataLoader, candidate_encoding: Optional[torch.Tensor]=None, top_k: int=100, indexer: Optional[DenseIndexer]=None):
     biencoder.model.eval()
     labels = []
     nns = []

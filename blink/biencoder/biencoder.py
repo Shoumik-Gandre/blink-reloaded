@@ -10,8 +10,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from tqdm import tqdm
-from transformers import AutoConfig, AutoModel
-from transformers import AutoTokenizer
+from transformers import AutoModel, AutoTokenizer, CONFIG_NAME, WEIGHTS_NAME
 
 from blink.common.ranker_base import BertEncoder, get_model_obj
 from blink.common.optimizer import get_bert_optimizer
@@ -173,7 +172,7 @@ class BiEncoderRanker(torch.nn.Module):
         else:
             # train on hard negatives
             embedding_ctxt = embedding_ctxt.unsqueeze(1)  # batchsize x 1 x embed_size
-            embedding_cands = embedding_cands.unsqueeze(2)  # batchsize x embed_size x 2
+            embedding_cands = embedding_cands.unsqueeze(2)  # batchsize x embed_size x 1
             scores = torch.bmm(embedding_ctxt, embedding_cands)  # batchsize x 1 x 1
             scores = torch.squeeze(scores)
             return scores

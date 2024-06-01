@@ -14,7 +14,7 @@ import logging
 import numpy as np
 
 from collections import OrderedDict
-from pytorch_transformers.modeling_utils import CONFIG_NAME, WEIGHTS_NAME
+from transformers import CONFIG_NAME, WEIGHTS_NAME
 from tqdm import tqdm
 
 from blink.candidate_ranking.bert_reranking import BertReranker

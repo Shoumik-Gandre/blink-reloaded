@@ -4,23 +4,24 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 #
-import torch
 import os
 import numpy as np
 
-from pytorch_transformers.modeling_bert import (
-    BertPreTrainedModel,
-    BertConfig,
-    BertModel,
-)
-from pytorch_transformers.tokenization_bert import BertTokenizer
-from torch.utils.data import DataLoader, SequentialSampler, TensorDataset
+from tqdm import tqdm
+import torch
 from torch import nn
 from torch.nn import CrossEntropyLoss, MSELoss
-from tqdm import tqdm
+from torch.utils.data import DataLoader, SequentialSampler, TensorDataset
 
-from pytorch_transformers.optimization import AdamW, WarmupLinearSchedule
-from pytorch_transformers.file_utils import PYTORCH_PRETRAINED_BERT_CACHE
+from transformers import (
+    BertPreTrainedModel,
+    BertModel,
+    BertTokenizer,
+    AdamW,
+    get_linear_schedule_with_warmup,
+    PYTORCH_PRETRAINED_BERT_CACHE
+)
+
 from blink.common.params import BERT_START_TOKEN, BERT_END_TOKEN
 from blink.common.params import ENT_START_TAG, ENT_END_TAG
 
@@ -270,10 +271,10 @@ class BertReranker:
             correct_bias=False,
         )
 
-        scheduler = WarmupLinearSchedule(
+        scheduler = get_linear_schedule_with_warmup(
             optimizer,
-            warmup_steps=num_warmup_steps,
-            t_total=num_train_optimization_steps,
+            num_warmup_steps=num_warmup_steps,
+            num_training_steps=num_train_optimization_steps,
         )
 
         logger.info("  Num optimization steps = %d", num_train_optimization_steps)

@@ -6,7 +6,7 @@ import blink.ner as NER
 import blink.main_dense as main_dense
 from typing import Dict, List, NamedTuple, Set
 import jsonlines
-from .main_utils import (
+from blink.application.main_utils import (
     MentionAnnotation, 
     process_biencoder_dataloader, 
     run_biencoder, 

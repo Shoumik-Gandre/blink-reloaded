@@ -12,7 +12,6 @@ from blink.crossencoder import CrossEncoderRanker
 from blink.biencoder.data_process import process_mention_data
 from blink.crossencoder.data_process import filter_crossencoder_tensor_input, prepare_crossencoder_candidates, prepare_crossencoder_mentions
 from blink.indexer.faiss_indexer import DenseIndexer
-from blink.main_dense import _load_candidates
 
 
 class Mention(TypedDict):
@@ -391,7 +390,7 @@ def load_candidate_entities(
     id2text: Dict[int, str] = {}
     wikipedia_id2local_id: Dict[str, int] = {}
 
-    with open(entity_catalogue_path, "r") as reader:
+    with jsonlines.open(entity_catalogue_path, "r") as reader:
         for local_idx, entity in enumerate(reader):
             if "idx" in entity:
                 split = entity["idx"].split("curid=")

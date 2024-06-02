@@ -1,7 +1,6 @@
 from typing import Dict
 
-from transformers import AutoModel
-from transformers.pipelines import PIPELINE_REGISTRY, Pipeline
+from transformers.pipelines import Pipeline
 from transformers.pipelines.base import build_pipeline_init_args, GenericTensor
 from transformers.utils import add_end_docstrings
 from transformers.modeling_outputs import BaseModelOutputWithPooling
@@ -26,7 +25,7 @@ class MentionEncoderPipeline(Pipeline):
     ```python
     >>> from transformers import pipeline
 
-    >>> extractor = pipeline(model=shomez/blink-biencoder-mention-encoder"", tokenizer="google-bert/bert-large-uncased", task="feature-extraction")
+    >>> extractor = pipeline(model=shomez/blink-biencoder-mention-encoder", task="mention-encoder")
     >>> result = extractor("This is a simple test.", return_tensors=True)
     >>> result.shape  # This is a tensor of shape [1, hidden_dimension] representing the input string.
     torch.Size([1, 1024])
@@ -87,16 +86,3 @@ class MentionEncoderPipeline(Pipeline):
             A nested list of `float`: The features computed by the model.
         """
         return super().__call__(*args, **kwargs)
-    
-
-PIPELINE_REGISTRY.register_pipeline(
-    "mention-encoder",
-    pipeline_class=MentionEncoderPipeline,
-    pt_model=AutoModel,
-    default={
-        'model': {
-            "pt": ('shomez/blink-biencoder-mention-encoder', "")
-        }
-    },
-    type="text",  # current support type: text, audio, image, multimodal
-)

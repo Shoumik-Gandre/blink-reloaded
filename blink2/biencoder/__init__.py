@@ -1,5 +1,5 @@
 from .entity_encoder_pipeline import EntityEncoderPipeline, EntityInput
-from .mention_encoder_pipeline import MentionEncoderPipeline
+from .mention_encoder_pipeline import MentionEncoderPipeline, MentionInput
 from transformers.pipelines import PIPELINE_REGISTRY
 from transformers import AutoModel
 
@@ -30,7 +30,3 @@ def register_entity_encoder_pipeline():
         },
         type="text",  # current support type: text, audio, image, multimodal
     )
-
-
-register_mention_encoder_pipeline()
-register_entity_encoder_pipeline()

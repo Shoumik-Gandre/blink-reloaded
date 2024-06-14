@@ -1,8 +1,16 @@
 from typing import List, Dict, Any, Optional
+
 from flair.data import Sentence
 from flair.models import SequenceTagger
 from transformers import pipeline
 from datasets import load_dataset
+import faiss
+import numpy as np
+
+from blink2 import register_mention_encoder_pipeline
+
+
+register_mention_encoder_pipeline()
 
 
 class Flair:
@@ -58,9 +66,8 @@ def main():
         },
     )
     mention_embeddings = mention_encoder(mentions)
-    import numpy as np
-    entities_ds = load_dataset('shomez/gun-control-abortion-entities')
-    entities_ds.add_faiss_index()
+    entities_ds = load_dataset('shomez/gun-control-abortion-entities', split='train')
+    entities_ds.add_faiss_index(column='embeddings', metric_type=faiss.METRIC_INNER_PRODUCT)
 
     result = entities_ds.search_batch('embeddings', np.array(mention_embeddings), k=3)
     for mention_index in result.total_indices.tolist():

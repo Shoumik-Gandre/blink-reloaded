@@ -6,6 +6,10 @@ from datasets import Dataset
 import faiss
 import torch
 
+from blink2.biencoder import register_entity_encoder_pipeline
+
+register_entity_encoder_pipeline()
+
 
 @dataclass
 class Entity:
@@ -41,7 +45,6 @@ entities = read_entities('/content/all_entities.jsonl')
 
 entities_embeddings = entity_encoder(
     entities, 
-    # return_tensors=True, 
     tokenize_kwargs={
         'truncation': True, 
         'max_length': 128

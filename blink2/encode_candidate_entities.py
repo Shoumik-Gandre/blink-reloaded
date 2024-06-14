@@ -4,6 +4,7 @@ from typing import Any, List
 import jsonlines
 from datasets import Dataset
 import faiss
+import torch
 
 
 @dataclass
@@ -26,11 +27,12 @@ def ds_gen(items: List[Any]):
     for row in items:
         yield asdict(row)
 
+device = 0 if torch.cuda.is_available() else -1
 
 entity_encoder = pipeline(
     "entity-encoder", 
     model='shomez/blink-biencoder-description-encoder', 
-    device=0, 
+    device=device, 
     batch_size=64
 )
 

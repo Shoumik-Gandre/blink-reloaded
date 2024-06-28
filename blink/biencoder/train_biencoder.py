@@ -136,18 +136,55 @@ def main(params):
     # Load train data
     # train_samples = utils.read_dataset("train", params["data_path"])
     train_samples: Dataset = load_dataset('shomez/zeshel-blink', split='train')
+
+    def map_function(sample):
+        return data.process_mention_data(
+            sample,
+            tokenizer,
+            params["max_context_length"],
+            params["max_cand_length"],
+            context_key=params["context_key"],
+        )
+    
+    def convert_to_tensors(example):
+        example["context_ids"] = torch.tensor(example["context_ids"], dtype=torch.long)
+        example["label_ids"] = torch.tensor(example["label_ids"], dtype=torch.long)
+        example["label_idx"] = torch.tensor(example["label_idx"], dtype=torch.long)
+        if "src" in example:
+            example["src"] = torch.tensor(example["src"], dtype=torch.long)
+        return example
+    
+    # If you need a DataLoader, you can convert the dataset to a TensorDataset
+    def create_tensor_dataset(tensor_dataset):
+        context_ids = torch.stack([x for x in tensor_dataset["context_ids"]])
+        label_ids = torch.stack([x for x in tensor_dataset["label_ids"]])
+        label_idx = torch.stack([x for x in tensor_dataset["label_idx"]])
+        if "src" in tensor_dataset.column_names:
+            src = torch.stack([x["src"] for x in tensor_dataset])
+            return TensorDataset(context_ids, label_ids, src, label_idx)
+        else:
+            return TensorDataset(context_ids, label_ids, label_idx)
+    
+    train_tensor_data = (
+        train_samples
+        .map(map_function, batched=False, num_proc=4, desc="Representation: ")
+        # .map(convert_to_tensors, batched=False, num_proc=4, desc="Tensorize: ")
+    )
+    train_tensor_data.set_format(type='torch', columns=['context_ids','label_ids','label_idx','src',])
+    train_tensor_data = create_tensor_dataset(train_tensor_data)
+    # print(train_tensor_data[0])
     logger.info("Read %d train samples." % len(train_samples))
 
-    train_data, train_tensor_data = data.process_mention_data(
-        train_samples.to_list(),
-        tokenizer,
-        params["max_context_length"],
-        params["max_cand_length"],
-        context_key=params["context_key"],
-        silent=params["silent"],
-        logger=logger,
-        debug=params["debug"],
-    )
+    # train_data, train_tensor_data = data.process_mention_data(
+    #     train_samples.to_list(),
+    #     tokenizer,
+    #     params["max_context_length"],
+    #     params["max_cand_length"],
+    #     context_key=params["context_key"],
+    #     silent=params["silent"],
+    #     logger=logger,
+    #     debug=params["debug"],
+    # )
     if params["shuffle"]:
         train_sampler = RandomSampler(train_tensor_data)
     else:
@@ -162,16 +199,24 @@ def main(params):
     valid_samples: Dataset = load_dataset('shomez/zeshel-blink', split='validation')
     logger.info("Read %d valid samples." % len(valid_samples))
 
-    valid_data, valid_tensor_data = data.process_mention_data(
-        valid_samples.to_list(),
-        tokenizer,
-        params["max_context_length"],
-        params["max_cand_length"],
-        context_key=params["context_key"],
-        silent=params["silent"],
-        logger=logger,
-        debug=params["debug"],
+    valid_tensor_data = (
+        valid_samples
+        .map(map_function, batched=False, num_proc=4, desc="Representation: ")
+        # .map(convert_to_tensors, batched=False, num_proc=4, desc="Tensorize: ")
     )
+    valid_tensor_data.set_format(type='torch', columns=['context_ids','label_ids','label_idx','src',])
+    valid_tensor_data = create_tensor_dataset(valid_tensor_data)
+
+    # valid_data, valid_tensor_data = data.process_mention_data(
+    #     valid_samples.to_list(),
+    #     tokenizer,
+    #     params["max_context_length"],
+    #     params["max_cand_length"],
+    #     context_key=params["context_key"],
+    #     silent=params["silent"],
+    #     logger=logger,
+    #     debug=params["debug"],
+    # )
     valid_sampler = SequentialSampler(valid_tensor_data)
     valid_dataloader = DataLoader(
         valid_tensor_data, sampler=valid_sampler, batch_size=eval_batch_size

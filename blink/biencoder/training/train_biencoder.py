@@ -5,18 +5,20 @@
 # LICENSE file in the root directory of this source tree.
 #
 import os
+import argparse
+from pathlib import Path
 import torch
 import random
 import time
 import numpy as np
 import logging
 from multiprocessing.pool import ThreadPool
-from collections import OrderedDict
 
 from tqdm import tqdm, trange
+from collections import OrderedDict
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, TensorDataset
 from transformers import WEIGHTS_NAME, get_linear_schedule_with_warmup
-from datasets import load_dataset, Dataset
+from datasets import Dataset, load_dataset
 
 
 from blink.biencoder.biencoder import BiEncoderRanker, load_biencoder
@@ -135,11 +137,11 @@ def main(params):
 
     # Load train data
     # train_samples = utils.read_dataset("train", params["data_path"])
-    train_samples: Dataset = load_dataset('shomez/zeshel-blink', split='train')
+    train_samples = load_dataset("json", data_files=Path(params["data_path"]) / "train.jsonl", split='train')
     logger.info("Read %d train samples." % len(train_samples))
 
     train_data, train_tensor_data = data.process_mention_data(
-        train_samples.to_list(),
+        train_samples,
         tokenizer,
         params["max_context_length"],
         params["max_cand_length"],
@@ -159,11 +161,11 @@ def main(params):
 
     # Load eval data
     # TODO: reduce duplicated code here
-    valid_samples: Dataset = load_dataset('shomez/zeshel-blink', split='validation')
+    valid_samples = utils.read_dataset("valid", params["data_path"])
     logger.info("Read %d valid samples." % len(valid_samples))
 
     valid_data, valid_tensor_data = data.process_mention_data(
-        valid_samples.to_list(),
+        valid_samples,
         tokenizer,
         params["max_context_length"],
         params["max_cand_length"],

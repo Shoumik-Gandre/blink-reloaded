@@ -52,7 +52,7 @@ def annotate_ner(ner_model: Flair, input_sentences: List[str]) -> List[Dict[str,
 def main():
     ner = Flair()
     sentences = [
-        "The overturing of Roe Wade was dissapointing.",
+        "The overturing of Roe V Wade was dissapointing.",
         "The Sandy Hook School Shooting gave rise to the March for our Lives."
     ]
     mentions = annotate_ner(ner, sentences)

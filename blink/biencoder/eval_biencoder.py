@@ -9,10 +9,11 @@ import argparse
 import json
 import logging
 import os
+
 import torch
 from tqdm import tqdm
-
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, TensorDataset
+from datasets import load_dataset, Dataset
+from torch.utils.data import DataLoader, SequentialSampler, TensorDataset
 
 from blink.biencoder.biencoder import BiEncoderRanker
 import blink.biencoder.data_process as data
@@ -117,7 +118,7 @@ def get_candidate_pool_tensor(
 
 
 def encode_candidate(
-    reranker,
+    reranker: BiEncoderRanker,
     candidate_pool,
     encode_batch_size,
     silent,
@@ -209,10 +210,6 @@ def main(params):
     # Init model 
     reranker = BiEncoderRanker(params)
     tokenizer = reranker.tokenizer
-    model = reranker.model
-    
-    device = reranker.device
-    
     cand_encode_path = params.get("cand_encode_path", None)
     
     # candidate encoding is not pre-computed. 
@@ -250,21 +247,36 @@ def main(params):
             # Save candidate encoding to avoid re-compute
             logger.info("Saving candidate encoding to file " + cand_encode_path)
             torch.save(candidate_encoding, cand_encode_path)
+    
+    def map_function(sample):
+        return data.process_mention_data(
+            sample,
+            tokenizer,
+            params["max_context_length"],
+            params["max_cand_length"],
+            context_key=params["context_key"],
+        )
+    
+    def create_tensor_dataset(tensor_dataset):
+        context_ids = torch.stack([x for x in tensor_dataset["context_ids"]])
+        label_ids = torch.stack([x for x in tensor_dataset["label_ids"]])
+        label_idx = torch.stack([x for x in tensor_dataset["label_idx"]])
+        if "src" in tensor_dataset.column_names:
+            src = torch.stack([x["src"] for x in tensor_dataset])
+            return TensorDataset(context_ids, label_ids, src, label_idx)
+        else:
+            return TensorDataset(context_ids, label_ids, label_idx)
+        
+    test_samples: Dataset = load_dataset('shomez/zeshel-blink', split=params["mode"])
 
-
-    test_samples = utils.read_dataset(params["mode"], params["data_path"])
     logger.info("Read %d test samples." % len(test_samples))
-   
-    test_data, test_tensor_data = data.process_mention_data(
-        test_samples,
-        tokenizer,
-        params["max_context_length"],
-        params["max_cand_length"],
-        context_key=params['context_key'],
-        silent=params["silent"],
-        logger=logger,
-        debug=params["debug"],
+    test_tensor_data = (
+        test_samples
+        .map(map_function, batched=False, num_proc=4, desc="Representation: ")
     )
+    test_tensor_data.set_format(type='torch', columns=['context_ids','label_ids','label_idx','src',])
+    test_tensor_data = create_tensor_dataset(test_tensor_data)
+
     test_sampler = SequentialSampler(test_tensor_data)
     test_dataloader = DataLoader(
         test_tensor_data, 

@@ -94,7 +94,7 @@ class BiEncoderRanker(torch.nn.Module):
         if cpu:
             state_dict = torch.load(fname, map_location=self.device)
         else:
-            state_dict = torch.load(fname)
+            state_dict = torch.load(fname, map_location=self.device)
         self.model.load_state_dict(state_dict)
 
     def build_model(self):

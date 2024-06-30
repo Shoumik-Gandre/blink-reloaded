@@ -7,20 +7,23 @@
 
 import json
 import logging
+from typing import Dict, List
 import torch
 from tqdm import tqdm
 
 import blink.candidate_ranking.utils as utils
+from blink.biencoder.biencoder import BiEncoderRanker
 from blink.biencoder.zeshel_utils import WORLDS, Stats
+from torch.utils.data import DataLoader
 
 
 def get_topk_predictions(
-    reranker,
-    train_dataloader,
-    candidate_pool,
-    cand_encode_list,
-    silent,
-    logger,
+    reranker: BiEncoderRanker,
+    train_dataloader: DataLoader,
+    candidate_pool: List[torch.Tensor] | torch.Tensor,
+    cand_encode_list: Dict[int, torch.Tensor],
+    silent: bool,
+    logger: logging.Logger,
     top_k=10,
     is_zeshel=False,
     save_predictions=False,
@@ -28,10 +31,6 @@ def get_topk_predictions(
     reranker.model.eval()
     device = reranker.device
     logger.info("Getting top %d predictions." % top_k)
-    if silent:
-        iter_ = train_dataloader
-    else:
-        iter_ = tqdm(train_dataloader)
 
     nn_context = []
     nn_candidates = []
@@ -46,6 +45,8 @@ def get_topk_predictions(
         world_size = 1
         candidate_pool = [candidate_pool]
         cand_encode_list = [cand_encode_list]
+    
+    candidate_pool: List[torch.Tensor]
 
     logger.info("World size : %d" % world_size)
 
@@ -53,7 +54,7 @@ def get_topk_predictions(
         stats[i] = Stats(top_k)
     
     oid = 0
-    for step, batch in enumerate(iter_):
+    for step, batch in enumerate(tqdm(train_dataloader, disable=silent)):
         batch = tuple(t.to(device) for t in batch)
         context_input, _, srcs, label_ids = batch
         src = srcs[0].item()
@@ -93,7 +94,7 @@ def get_topk_predictions(
                 continue
 
             # add examples in new_data
-            cur_candidates = candidate_pool[src][inds]
+            cur_candidates = candidate_pool[srcs[i].item()][inds]# candidate_pool[src][inds]
             nn_context.append(context_input[i].cpu().tolist())
             nn_candidates.append(cur_candidates.cpu().tolist())
             nn_labels.append(pointer)

@@ -94,7 +94,7 @@ def get_topk_predictions(
                 continue
 
             # add examples in new_data
-            cur_candidates = candidate_pool[srcs[i].item()][inds]# candidate_pool[src][inds]
+            cur_candidates = candidate_pool[srcs[i].item()][inds.cpu()]# candidate_pool[src][inds]
             nn_context.append(context_input[i].cpu().tolist())
             nn_candidates.append(cur_candidates.cpu().tolist())
             nn_labels.append(pointer)

@@ -61,8 +61,8 @@ class BiEncoderRankerParams(TypedDict):
     add_linear: bool
     no_cuda: bool
     lowercase: bool
-    path_to_model: Optional[str]
     data_parallel: bool
+    path_to_model: Optional[str]
     
 
 class BiEncoderRanker(torch.nn.Module):
@@ -70,7 +70,6 @@ class BiEncoderRanker(torch.nn.Module):
         super(BiEncoderRanker, self).__init__()
         self.params = params
         self.device = torch.device("cuda" if torch.cuda.is_available() and not params["no_cuda"] else "cpu")
-        self.n_gpu = torch.cuda.device_count()
         # init tokenizer
         self.NULL_IDX = 0
         self.START_TOKEN = BERT_START_TOKEN

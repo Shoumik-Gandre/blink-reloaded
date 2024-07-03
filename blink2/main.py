@@ -82,7 +82,7 @@ def main(
     entities_ds = load_from_disk(entities_path)
     entities_ds.add_faiss_index(column='embeddings', metric_type=faiss.METRIC_INNER_PRODUCT)
 
-    result = entities_ds.search_batch('embeddings', np.array(mention_embeddings), k=3)
+    result = entities_ds.search_batch('embeddings', np.array(mention_embeddings), k=8)
     for mention_index in result.total_indices.tolist():
         for candidate in mention_index:
             print(entities_ds[candidate]['title'])

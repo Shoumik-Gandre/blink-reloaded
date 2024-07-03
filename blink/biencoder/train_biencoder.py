@@ -75,12 +75,12 @@ def evaluate(reranker: BiEncoderRanker, eval_dataloader: DataLoader, logger: log
     return {"normalized_accuracy": normalized_eval_accuracy}
 
 
-def get_optimizer(model, params):
+def get_optimizer(model, type_optimization, learning_rate, fp16):
     return get_bert_optimizer(
         [model],
-        params["type_optimization"],
-        params["learning_rate"],
-        fp16=params.get("fp16"),
+        type_optimization,
+        learning_rate,
+        fp16=fp16,
     )
 
 
@@ -157,7 +157,6 @@ def collate_fn(sample: CollateFnInput):
         result['src'] = src
     
     return result
-
 
 
 def save_model(model: BiEncoderModule, tokenizer: PreTrainedTokenizer, output_dir: str):
@@ -258,6 +257,7 @@ def run(
         "cand_pool_path": cand_pool_path,
         "entity_dict_path": entity_dict_path,
         "cand_encode_path": cand_encode_path,
+        "fp16": False
     }
 
     model_output_path = output_path
@@ -265,7 +265,7 @@ def run(
     logger = utils.get_logger(output_path)
 
     # Init model
-    reranker = BiEncoderRanker({
+    reranker = BiEncoderRanker(
         BiEncoderRankerParams(
             bert_model=bert_model,
             out_dim=out_dim,
@@ -275,10 +275,8 @@ def run(
             lowercase=lowercase,
             path_to_model=path_to_model,
             data_parallel=data_parallel,
-            # type_optimization=type_optimization,
-            # learning_rate=learning_rate,
         )
-    })
+    )
     tokenizer = reranker.tokenizer
     tokenizer.add_special_tokens({'additional_special_tokens': ['[unused0]', '[unused1]', '[unused2]']})
     # Entity split token should be a special token in tokenizer
@@ -289,7 +287,7 @@ def run(
     model = reranker.model
 
     device = reranker.device
-    n_gpu = reranker.n_gpu
+    n_gpu = torch.cuda.device_count()
 
     if gradient_accumulation_steps < 1:
         raise ValueError(
@@ -300,15 +298,14 @@ def run(
 
     # An effective batch size of `x`, when we are accumulating the gradient accross `y` batches will be achieved by having a batch size of `z = x / y`
     # args.gradient_accumulation_steps = args.gradient_accumulation_steps // n_gpu
-    params["train_batch_size"] = train_batch_size // gradient_accumulation_steps
-    train_batch_size = params["train_batch_size"]
+    train_batch_size = train_batch_size // gradient_accumulation_steps
     grad_acc_steps = gradient_accumulation_steps
 
     # Fix the random seeds
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
-    if reranker.n_gpu > 0:
+    if n_gpu > 0:
         torch.cuda.manual_seed_all(seed)
 
     # Load train data
@@ -370,7 +367,7 @@ def run(
     valid_dataloader = DataLoader(valid_tensor_data, shuffle=False, batch_size=eval_batch_size)
 
     # evaluate before training
-    results = evaluate(reranker, valid_dataloader, logger=logger, silent=silent)
+    # results = evaluate(reranker, valid_dataloader, logger=logger, silent=silent)
 
     time_start = time.time()
 
@@ -379,7 +376,7 @@ def run(
     logger.info("Starting training")
     logger.info("device: {} n_gpu: {}, distributed training: {}".format(device, n_gpu, False))
 
-    optimizer = get_optimizer(model, params)
+    optimizer = get_optimizer(model, params['type_optimization'], params['learning_rate'], params['fp16'])
     scheduler = get_scheduler(params, optimizer, len(train_tensor_data), logger)
 
     model.train()

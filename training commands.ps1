@@ -28,13 +28,27 @@ python blink/biencoder/train_biencoder.py `
 --data-path data/zeshel/blink_format `
 --output-path models/zeshel/biencoder3 `
 --bert-model prajjwal1/bert-mini `
---learning-rate 1e-05 `
---num-train-epochs 10 `
+--learning-rate 2e-05 `
+--num-train-epochs 5 `
 --max-context-length 128 `
 --max-cand-length 128 `
---train-batch-size 64 `
+--train-batch-size 128 `
 --eval-batch-size 64 `
 --eval-interval 100000 `
 --shuffle `
 --zeshel `
 --debug
+
+
+$env:PYTHONPATH = "."
+python blink/biencoder/train_biencoder_new.py `
+--data-path data/zeshel/blink_format `
+--output-path models/zeshel/biencoder3 `
+--bert-model prajjwal1/bert-small `
+--learning-rate 2e-05 `
+--num-train-epochs 5 `
+--max-context-length 128 `
+--max-cand-length 128 `
+--train-batch-size 128 `
+--eval-batch-size 64 `
+--shuffle

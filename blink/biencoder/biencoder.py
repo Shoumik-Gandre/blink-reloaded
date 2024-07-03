@@ -4,42 +4,36 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 #
-import os
-import numpy as np
+from typing import Optional, TypedDict
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from tqdm import tqdm
-from transformers import AutoModel, AutoTokenizer, CONFIG_NAME, WEIGHTS_NAME
+from transformers import AutoModel, AutoTokenizer
 
-from blink.common.ranker_base import BertEncoder, get_model_obj
-from blink.common.optimizer import get_bert_optimizer
+from blink.common.ranker_base import BertEncoder
 from blink.common.params import BERT_START_TOKEN, BERT_END_TOKEN
 
 
-def load_biencoder(params):
+class BiEncoderModuleParams(TypedDict):
+    bert_model: str
+    out_dim: int
+    pull_from_layer: int
+    add_linear: bool
+
+
+def load_biencoder(params: BiEncoderModuleParams):
     # Init model
     biencoder = BiEncoderRanker(params)
     return biencoder
 
 
 class BiEncoderModule(torch.nn.Module):
-    def __init__(self, params):
+    def __init__(self, params: BiEncoderModuleParams):
         super(BiEncoderModule, self).__init__()
         ctxt_bert = AutoModel.from_pretrained(params["bert_model"])
         cand_bert = AutoModel.from_pretrained(params['bert_model'])
-        self.context_encoder = BertEncoder(
-            ctxt_bert,
-            params["out_dim"],
-            layer_pulled=params["pull_from_layer"],
-            add_linear=params["add_linear"],
-        )
-        self.cand_encoder = BertEncoder(
-            cand_bert,
-            params["out_dim"],
-            layer_pulled=params["pull_from_layer"],
-            add_linear=params["add_linear"],
-        )
+        self.context_encoder = BertEncoder(ctxt_bert, params["out_dim"], layer_pulled=params["pull_from_layer"], add_linear=params["add_linear"])
+        self.cand_encoder = BertEncoder(cand_bert, params["out_dim"], layer_pulled=params["pull_from_layer"], add_linear=params["add_linear"])
         self.config = ctxt_bert.config
 
     def forward(
@@ -53,32 +47,35 @@ class BiEncoderModule(torch.nn.Module):
     ):
         embedding_ctxt = None
         if token_idx_ctxt is not None:
-            embedding_ctxt = self.context_encoder(
-                token_idx_ctxt, segment_idx_ctxt, mask_ctxt
-            )
+            embedding_ctxt = self.context_encoder(token_idx_ctxt, segment_idx_ctxt, mask_ctxt)
         embedding_cands = None
         if token_idx_cands is not None:
-            embedding_cands = self.cand_encoder(
-                token_idx_cands, segment_idx_cands, mask_cands
-            )
+            embedding_cands = self.cand_encoder(token_idx_cands, segment_idx_cands, mask_cands)
         return embedding_ctxt, embedding_cands
 
 
+class BiEncoderRankerParams(TypedDict):
+    bert_model: str
+    out_dim: int
+    pull_from_layer: int
+    add_linear: bool
+    no_cuda: bool
+    lowercase: bool
+    path_to_model: Optional[str]
+    data_parallel: bool
+    
+
 class BiEncoderRanker(torch.nn.Module):
-    def __init__(self, params, shared=None):
+    def __init__(self, params: BiEncoderRankerParams):
         super(BiEncoderRanker, self).__init__()
         self.params = params
-        self.device = torch.device(
-            "cuda" if torch.cuda.is_available() and not params["no_cuda"] else "cpu"
-        )
+        self.device = torch.device("cuda" if torch.cuda.is_available() and not params["no_cuda"] else "cpu")
         self.n_gpu = torch.cuda.device_count()
         # init tokenizer
         self.NULL_IDX = 0
         self.START_TOKEN = BERT_START_TOKEN
         self.END_TOKEN = BERT_END_TOKEN
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            params["bert_model"], do_lower_case=params["lowercase"]
-        )
+        self.tokenizer = AutoTokenizer.from_pretrained(params["bert_model"], do_lower_case=params["lowercase"])
         # init model
         self.build_model()
         model_path = params.get("path_to_model", None)
@@ -90,84 +87,38 @@ class BiEncoderRanker(torch.nn.Module):
         if self.data_parallel:
             self.model = torch.nn.DataParallel(self.model)
 
-    def load_model(self, fname, cpu=False):
-        if cpu:
-            state_dict = torch.load(fname, map_location=self.device)
-        else:
-            state_dict = torch.load(fname, map_location=self.device)
+    def load_model(self, fname):
+        state_dict = torch.load(fname, map_location=self.device)
         self.model.load_state_dict(state_dict)
 
     def build_model(self):
         self.model = BiEncoderModule(self.params)
-
-    def save_model(self, output_dir):
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-        model_to_save = get_model_obj(self.model)
-        output_model_file = os.path.join(output_dir, WEIGHTS_NAME)
-        output_config_file = os.path.join(output_dir, CONFIG_NAME)
-        torch.save(model_to_save.state_dict(), output_model_file)
-        model_to_save.config.to_json_file(output_config_file)
-
-    def get_optimizer(self, optim_states=None, saved_optim_type=None):
-        return get_bert_optimizer(
-            [self.model],
-            self.params["type_optimization"],
-            self.params["learning_rate"],
-            fp16=self.params.get("fp16"),
-        )
-
-    def encode_context(self, cands):
-        token_idx_cands, segment_idx_cands, mask_cands = to_bert_input(
-            cands, self.NULL_IDX
-        )
-        embedding_context, _ = self.model(
-            token_idx_cands, segment_idx_cands, mask_cands, None, None, None
-        )
-        return embedding_context.cpu().detach()
-
-    def encode_candidate(self, cands):
-        token_idx_cands, segment_idx_cands, mask_cands = to_bert_input(
-            cands, self.NULL_IDX
-        )
-        _, embedding_cands = self.model(
-            None, None, None, token_idx_cands, segment_idx_cands, mask_cands
-        )
-        return embedding_cands.cpu().detach()
-        # TODO: why do we need cpu here?
-        # return embedding_cands
-
-    # Score candidates given context input and label input
-    # If cand_encs is provided (pre-computed), cand_ves is ignored
+    
     def score_candidate(
             self,
-            text_vecs,
-            cand_vecs,
+            mention_input_ids: torch.LongTensor, 
+            mention_attention_mask: torch.LongTensor, 
+            mention_token_type_ids: torch.LongTensor,
+            entity_input_ids: torch.LongTensor, 
+            entity_attention_mask: torch.LongTensor, 
+            entity_token_type_ids: torch.LongTensor, 
             random_negs=True,
             cand_encs=None,  # pre-computed candidate encoding.
-    ):
+    ) -> torch.Tensor:
         # Encode contexts first
-        token_idx_ctxt, segment_idx_ctxt, mask_ctxt = to_bert_input(
-            text_vecs, self.NULL_IDX
-        )
-        embedding_ctxt, _ = self.model(
-            token_idx_ctxt, segment_idx_ctxt, mask_ctxt, None, None, None
-        )
+        embedding_ctxt, _ = self.model(mention_input_ids, mention_token_type_ids, mention_attention_mask, None, None, None)
 
         # Candidate encoding is given, do not need to re-compute
         # Directly return the score of context encoding and candidate encoding
         if cand_encs is not None:
             return embedding_ctxt.mm(cand_encs.t())
 
-        # Train time. We compare with all elements of the batch
-        token_idx_cands, segment_idx_cands, mask_cands = to_bert_input(
-            cand_vecs, self.NULL_IDX
-        )
-        _, embedding_cands = self.model(
-            None, None, None, token_idx_cands, segment_idx_cands, mask_cands
-        )
+        _, embedding_cands = self.model(None, None, None, entity_input_ids, entity_token_type_ids, entity_attention_mask)
+        
         if random_negs:
             # train on random negatives
+            embedding_ctxt: torch.Tensor
+            embedding_cands: torch.Tensor
             return embedding_ctxt.mm(embedding_cands.t())
         else:
             # train on hard negatives
@@ -177,21 +128,47 @@ class BiEncoderRanker(torch.nn.Module):
             scores = torch.squeeze(scores)
             return scores
 
-    # label_input -- negatives provided
-    # If label_input is None, train on in-batch negatives
-    def forward(self, context_input, cand_input, label_input=None):
+    def forward(
+            self, 
+            mention_input_ids: torch.LongTensor, 
+            mention_attention_mask: torch.LongTensor, 
+            mention_token_type_ids: torch.LongTensor,
+            entity_input_ids: torch.LongTensor, 
+            entity_attention_mask: torch.LongTensor, 
+            entity_token_type_ids: torch.LongTensor, 
+            label_input=None
+        ):
         flag = label_input is None
-        scores = self.score_candidate(context_input, cand_input, flag)
+        scores = self.score_candidate(
+            mention_input_ids, 
+            mention_attention_mask, 
+            mention_token_type_ids,
+            entity_input_ids, 
+            entity_attention_mask, 
+            entity_token_type_ids, 
+            flag
+        )
         bs = scores.size(0)
         if label_input is None:
-            target = torch.LongTensor(torch.arange(bs))
-            target = target.to(self.device)
+            target = torch.arange(bs, dtype=torch.long, device=scores.device)
             loss = F.cross_entropy(scores, target, reduction="mean")
         else:
-            loss_fct = nn.BCEWithLogitsLoss(reduction="mean")
-            # TODO: add parameters?
+            loss_fct = nn.BCEWithLogitsLoss()
             loss = loss_fct(scores, label_input)
         return loss, scores
+    
+    def encode_context(self, cands):
+        token_idx_cands, segment_idx_cands, mask_cands = to_bert_input(cands, self.NULL_IDX)
+        embedding_context, _ = self.model(token_idx_cands, segment_idx_cands, mask_cands, None, None, None)
+        return embedding_context.cpu().detach()
+
+    def encode_candidate(self, cands):
+        token_idx_cands, segment_idx_cands, mask_cands = to_bert_input(cands, self.NULL_IDX)
+        _, embedding_cands = self.model(
+            None, None, None, token_idx_cands, segment_idx_cands, mask_cands
+        )
+        # TODO: why do we need cpu here?
+        return embedding_cands.cpu().detach()
 
 
 def to_bert_input(token_idx, null_idx):

@@ -5,27 +5,27 @@
 # LICENSE file in the root directory of this source tree.
 #
 
-import argparse
 import json
 import logging
 import os
+from typing import Annotated
 
 import torch
 from tqdm import tqdm
 from datasets import load_dataset, Dataset
 from torch.utils.data import DataLoader, SequentialSampler, TensorDataset
 
-from blink.biencoder.biencoder import BiEncoderRanker
+from blink.biencoder.biencoder import BiEncoderRanker, BiEncoderRankerParams
 import blink.biencoder.data_process as data
 import blink.biencoder.nn_prediction as nnquery
 import blink.candidate_ranking.utils as utils
-from blink.biencoder.zeshel_utils import WORLDS, load_entity_dict_zeshel, Stats
-from blink.common.params import BlinkParser, set_constant_tokens
+from blink.biencoder.zeshel_utils import WORLDS, load_entity_dict_zeshel
+from blink.common.params import set_constant_tokens
 
 
 def load_entity_dict(logger, params, is_zeshel):
     if is_zeshel:
-        return load_entity_dict_zeshel(logger, params)
+        return load_entity_dict_zeshel(logger, params, params['entity_dict_path'])
 
     path = params.get("entity_dict_path", None)
     assert path is not None, "Error! entity_dict_path is empty."
@@ -200,24 +200,69 @@ def load_or_generate_candidate_pool(
     return candidate_pool
 
 
-def main(params):
-    set_constant_tokens(params)
-    output_path = params["output_path"]
+import typer
+def run(
+        output_path: Annotated[str, typer.Argument(help="The output directory where the generated output file (model, etc.) is to be dumped.")],
+        eval_batch_size: int = typer.Option(default=8, help="Total batch size for evaluation."),
+        mode: str = typer.Option(default="test", help="Train / validation / test"),
+        save_topk_result: bool = typer.Option(default=False, help="Whether to save prediction results."),
+        encode_batch_size: int = typer.Option(default=8, help="Batch size for encoding."),
+        cand_pool_path: str = typer.Option(default=None, help="Path for cached candidate pool (id tokenization of candidates)"),
+        entity_dict_path: str = typer.Option(default=None, help="Path for entity dictionary"),
+        cand_encode_path: str = typer.Option(default=None, help="Path for cached candidate encoding"),
+        roberta: bool = typer.Option(default=False, help="Is the bert model roberta or not"),
+        # blink args
+        silent: bool = typer.Option(False, help="Whether to print progress bars."),
+        debug: bool = typer.Option(False, help="Whether to run in debug mode with only 200 samples."),
+        data_parallel: bool = typer.Option(False, help="Whether to distributed the candidate generation process."),
+        cuda: bool = typer.Option(False, help="Whether not to use CUDA when available"),
+        top_k: int = typer.Option(10),
+        seed: int = typer.Option(default=52313, help="random seed for initialization"),
+        zeshel: bool = typer.Option(False, help="Whether the dataset is from zeroshot."),
+        # model args
+        max_seq_length: int = typer.Option(256, help="The maximum total input sequence length after WordPiece tokenization. Sequences longer than this will be truncated, and sequences shorter than this will be padded."),
+        max_context_length: int = typer.Option(128, help="The maximum total context input sequence length after WordPiece tokenization. Sequences longer than this will be truncated, and sequences shorter than this will be padded."),
+        max_cand_length: int = typer.Option(128, help="The maximum total label input sequence length after WordPiece tokenization. Sequences longer than this will be truncated, and sequences shorter than this will be padded."),
+        path_to_model: str = typer.Option(None, help="The full path to the model to load."),
+        bert_model: str = typer.Option("bert-base-uncased", help="Bert pre-trained model selected in the list: bert-base-uncased, bert-large-uncased, bert-base-cased, bert-base-multilingual, bert-base-chinese."),
+        pull_from_layer: int = typer.Option(-1, help="Layers to pull from BERT."),
+        lowercase: bool = typer.Option(True, help="Whether to lower case the input text. True for uncased models, False for cased models."),
+        context_key: str = typer.Option("context", help="Key for context."),
+        out_dim: int = typer.Option(1, help="Output dimension of bi-encoders."),
+        add_linear: bool = typer.Option(False, help="Whether to add an additional linear projection on top of BERT."),
+        data_path: str = typer.Option("data/zeshel", help="The path to the train data."),
+    ) -> None:
+    set_constant_tokens({'roberta': roberta})
     if not os.path.exists(output_path):
         os.makedirs(output_path)
-    logger = utils.get_logger(params["output_path"])
+    logger = utils.get_logger(output_path)
+
+    biencoder_ranker_params: BiEncoderRankerParams = {
+        "bert_model": bert_model,
+        "out_dim": out_dim,
+        "pull_from_layer": pull_from_layer,
+        "add_linear": add_linear,
+        "no_cuda": not cuda,
+        "lowercase": lowercase,
+        "path_to_model": path_to_model,
+        "data_parallel": data_parallel,
+    }
 
     # Init model 
-    reranker = BiEncoderRanker(params)
+    reranker = BiEncoderRanker(biencoder_ranker_params)
     tokenizer = reranker.tokenizer
-    cand_encode_path = params.get("cand_encode_path", None)
     
     # candidate encoding is not pre-computed. 
     # load/generate candidate pool to compute candidate encoding.
-    cand_pool_path = params.get("cand_pool_path", None)
     candidate_pool = load_or_generate_candidate_pool(
         tokenizer,
-        params,
+        {
+            'zeshel': zeshel,
+            'max_cand_length': max_cand_length,
+            'entity_dict_path': entity_dict_path,
+            'debug': debug,
+            'mode': mode
+        },
         logger,
         cand_pool_path,
     )       
@@ -236,11 +281,10 @@ def main(params):
         candidate_encoding = encode_candidate(
             reranker,
             candidate_pool,
-            params["encode_batch_size"],
-            silent=params["silent"],
+            encode_batch_size,
+            silent=silent,
             logger=logger,
-            is_zeshel=params.get("zeshel", None)
-            
+            is_zeshel=zeshel 
         )
 
         if cand_encode_path is not None:
@@ -252,9 +296,9 @@ def main(params):
         return data.process_mention_data(
             sample,
             tokenizer,
-            params["max_context_length"],
-            params["max_cand_length"],
-            context_key=params["context_key"],
+            max_context_length,
+            max_cand_length,
+            context_key=context_key,
         )
     
     def create_tensor_dataset(tensor_dataset):
@@ -267,58 +311,40 @@ def main(params):
         else:
             return TensorDataset(context_ids, label_ids, label_idx)
         
-    test_samples: Dataset = load_dataset('shomez/zeshel-blink', split=params["mode"])
+    test_samples: Dataset = load_dataset('shomez/zeshel-blink', split=mode)
 
     logger.info("Read %d test samples." % len(test_samples))
-    test_tensor_data = (
-        test_samples
-        .map(map_function, batched=False, num_proc=4, desc="Representation: ")
-    )
+    test_tensor_data = (test_samples.map(map_function, batched=False, num_proc=4, desc="Representation: "))
     test_tensor_data.set_format(type='torch', columns=['context_ids','label_ids','label_idx','src',])
     test_tensor_data = create_tensor_dataset(test_tensor_data)
 
     test_sampler = SequentialSampler(test_tensor_data)
-    test_dataloader = DataLoader(
-        test_tensor_data, 
-        sampler=test_sampler, 
-        batch_size=params["eval_batch_size"]
-    )
+    test_dataloader = DataLoader(test_tensor_data, sampler=test_sampler, batch_size=eval_batch_size)
     
-    save_results = params.get("save_topk_result")
     new_data = nnquery.get_topk_predictions(
         reranker,
         test_dataloader,
         candidate_pool,
         candidate_encoding,
-        params["silent"],
+        silent,
         logger,
-        params["top_k"],
-        params.get("zeshel", None),
-        save_results,
+        top_k,
+        zeshel,
+        save_topk_result,
     )
 
-    if save_results: 
+    if save_topk_result: 
         save_data_dir = os.path.join(
-            params['output_path'],
-            "top%d_candidates" % params['top_k'],
+            output_path,
+            "top%d_candidates" % top_k,
         )
         if not os.path.exists(save_data_dir):
             os.makedirs(save_data_dir)
-        save_data_path = os.path.join(save_data_dir, "%s.t7" % params['mode'])
+        save_data_path = os.path.join(save_data_dir, "%s.t7" % mode)
         torch.save(new_data, save_data_path)
 
 
 if __name__ == "__main__":
-    parser = BlinkParser(add_model_args=True)
-    parser.add_eval_args()
-
-    args = parser.parse_args()
-    print(args)
-
-    params = args.__dict__
-
-    mode_list = params["mode"].split(',')
-    for mode in mode_list:
-        new_params = params
-        new_params["mode"] = mode
-        main(new_params)
+    app = typer.Typer(add_completion=False, pretty_exceptions_show_locals = False)
+    app.command()(run)
+    app()

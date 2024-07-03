@@ -1,11 +1,11 @@
-from typing import NamedTuple, Dict
+from typing import Dict, TypedDict
 from transformers.pipelines import Pipeline
 from transformers.pipelines.base import build_pipeline_init_args, GenericTensor
 from transformers.utils import add_end_docstrings
 from transformers.modeling_outputs import BaseModelOutputWithPooling
 
 
-class EntityInput(NamedTuple):
+class EntityInput(TypedDict):
     text: str
     title: str
 
@@ -63,7 +63,7 @@ class EntityEncoderPipeline(Pipeline):
         return preprocess_params, {}, postprocess_params
 
     def preprocess(self, inputs: EntityInput, **tokenize_kwargs) -> Dict[str, GenericTensor]:
-        input_string = f"{inputs.title} [unused2] {inputs.text}"
+        input_string = f"{inputs['title']} [unused2] {inputs['text']}"
         model_inputs = self.tokenizer(
             input_string, 
             return_tensors=self.framework, 

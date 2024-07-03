@@ -7,9 +7,9 @@
 
 # Utility code for zeshel dataset
 import json
-import torch
+import logging
 
-DOC_PATH = "data/zeshel/documents/"
+# DOC_PATH = "data/zeshel/documents/"
 
 WORLDS = [
     'american_football',
@@ -33,7 +33,7 @@ WORLDS = [
 world_to_id = {src : k for k, src in enumerate(WORLDS)}
 
 
-def load_entity_dict_zeshel(logger, params):
+def load_entity_dict_zeshel(logger: logging.Logger, params, DOC_PATH = "data/zeshel/documents/"):
     entity_dict = {}
     # different worlds in train/valid/test
     if params["mode"] == "train":

@@ -1,11 +1,17 @@
-from typing import List, Dict, Any, Optional
+"""
+$env:PYTHONPATH='.'
+python .\blink2\main.py models\zeshel\biencoder3\epoch_2\entity-encoder models\zeshel\biencoder3\epoch_2\ data\biencoder3
+"""
+from typing import Annotated, List, Dict, Any, Optional
 
 from flair.data import Sentence
 from flair.models import SequenceTagger
 from transformers import pipeline
-from datasets import load_dataset
+from transformers.pipelines.pt_utils import KeyDataset
+from datasets import load_dataset, load_from_disk
 import faiss
 import numpy as np
+import typer
 
 from blink2 import register_mention_encoder_pipeline
 
@@ -49,24 +55,31 @@ def annotate_ner(ner_model: Flair, input_sentences: List[str]) -> List[Dict[str,
     return samples
 
 
-def main():
+def main(
+    model_path: Annotated[str, typer.Argument(help="Entity Embedder")],
+    tokenizer_path: Annotated[str, typer.Argument(help="Tokenizer for Entity Embedder")],
+    entities_path: Annotated[str, typer.Argument(help="Path to entities dataset dir")],
+) -> None:
     ner = Flair()
     sentences = [
         "The overturing of Roe V Wade was dissapointing.",
-        "The Sandy Hook School Shooting gave rise to the March for our Lives."
+        "The Sandy Hook School Elementary Shooting gave rise to the March for our Lives."
     ]
     mentions = annotate_ner(ner, sentences)
     mention_encoder = pipeline(
         "mention-encoder",
-        model='shomez/blink-biencoder-mention-encoder',
+        model=model_path,
+        tokenizer=tokenizer_path,
         device=-1,
         batch_size=64,
         tokenize_kwargs={
             'max_length': 128,
         },
     )
+
     mention_embeddings = mention_encoder(mentions)
-    entities_ds = load_dataset('shomez/gun-control-abortion-entities', split='train')
+    
+    entities_ds = load_from_disk(entities_path)
     entities_ds.add_faiss_index(column='embeddings', metric_type=faiss.METRIC_INNER_PRODUCT)
 
     result = entities_ds.search_batch('embeddings', np.array(mention_embeddings), k=3)
@@ -74,7 +87,11 @@ def main():
         for candidate in mention_index:
             print(entities_ds[candidate]['title'])
         print()
+    
+    print(mentions)
 
 
 if __name__ == '__main__':
-    main()
+    app = typer.Typer(add_completion=False, pretty_exceptions_enable=False)
+    app.command()(main)
+    app()

@@ -203,7 +203,8 @@ def run(
         num_train_epochs=num_train_epochs,
         max_grad_norm=max_grad_norm,
         learning_rate=learning_rate,
-        warmup_ratio=warmup_proportion
+        warmup_ratio=warmup_proportion,
+        fp16=True,
     )
 
     trainer = Trainer(

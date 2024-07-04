@@ -75,7 +75,7 @@ def tokenize_mention(
         + mention_tokens
         + context_right[:num_tokens_on_right]
     )
-    context_tokens = [tokenizer.cls_token] + context_tokens + [tokenizer.sep_token]
+    context_tokens = context_tokens
 
     input_ids = tokenizer.convert_tokens_to_ids(context_tokens)
 
@@ -158,7 +158,7 @@ def tokenize_all(
 
     label_idx = sample["label_id"]
 
-    record =  mentions | entities | {'label_idx': label_idx}
+    record = mentions | entities | {'label_idx': label_idx}
 
     if "world" in sample:
         src = sample["world"]

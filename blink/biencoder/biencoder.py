@@ -8,7 +8,7 @@ from typing import Optional, TypedDict
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import AutoModel, AutoTokenizer
+from transformers import AutoModel, AutoTokenizer, BertModel
 
 from blink.common.ranker_base import BertEncoder
 from blink.common.params import BERT_START_TOKEN, BERT_END_TOKEN
@@ -30,8 +30,8 @@ def load_biencoder(params: BiEncoderModuleParams):
 class BiEncoderModule(torch.nn.Module):
     def __init__(self, params: BiEncoderModuleParams):
         super(BiEncoderModule, self).__init__()
-        ctxt_bert = AutoModel.from_pretrained(params["bert_model"])
-        cand_bert = AutoModel.from_pretrained(params['bert_model'])
+        ctxt_bert = BertModel.from_pretrained(params["bert_model"])
+        cand_bert = BertModel.from_pretrained(params['bert_model'])
         self.context_encoder = BertEncoder(ctxt_bert, params["out_dim"], layer_pulled=params["pull_from_layer"], add_linear=params["add_linear"])
         self.cand_encoder = BertEncoder(cand_bert, params["out_dim"], layer_pulled=params["pull_from_layer"], add_linear=params["add_linear"])
         self.config = ctxt_bert.config
@@ -79,7 +79,7 @@ class BiEncoderRanker(torch.nn.Module):
         self.build_model()
         model_path = params.get("path_to_model", None)
         if model_path is not None:
-            self.load_model(model_path, params["no_cuda"])
+            self.load_model(model_path)
 
         self.model = self.model.to(self.device)
         self.data_parallel = params.get("data_parallel")

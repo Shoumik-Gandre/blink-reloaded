@@ -9,41 +9,44 @@ from typing import Optional, Tuple, TypedDict
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import AutoModel, PreTrainedModel, PretrainedConfig
+from transformers import PreTrainedModel, PretrainedConfig, DebertaForSequenceClassification, DebertaConfig
+from transformers.modeling_outputs import SequenceClassifierOutput
 
 
-class BiEncoderRankerConfig(PretrainedConfig):
-    model_type = "biencoder_ranker"
+class DebertaBiencoderRankerConfig(PretrainedConfig):
+    model_type = "deberta_biencoder_ranker"
     
-    def __init__(self, mention_encoder: str, entity_encoder: str, **kwargs):
+    def __init__(self, mention_encoder_config: DebertaConfig, entity_encoder_config: DebertaConfig, embed_dim: int, **kwargs):
         super().__init__(**kwargs)
-        pass
-    
+        self.embed_dim = embed_dim
+        self.mention_encoder_config = mention_encoder_config
+        self.entity_encoder_config = entity_encoder_config
+        self.mention_encoder_config.num_labels = self.embed_dim
+        self.entity_encoder_config.num_labels = self.embed_dim
 
-class BiEncoderRanker(PreTrainedModel):
+class DebertaBiencoderRanker(PreTrainedModel):
     """
     This is a wrapper class for training mention_encoder and entity_encoder
     """
-    def __init__(self, config: BiEncoderRankerConfig, mention_encoder: nn.Module, entity_encoder: nn.Module):
+    def __init__(self, config: DebertaBiencoderRankerConfig):
         super().__init__(config)
-        self.mention_encoder = mention_encoder
-        self.entity_encoder = entity_encoder
+        self.mention_encoder = DebertaForSequenceClassification(config.mention_encoder_config)
+        self.entity_encoder = DebertaForSequenceClassification(config.entity_encoder_config)
 
-    def encode_mentions(self, input_ids: torch.LongTensor, attention_mask: torch.LongTensor) -> torch.Tensor:
-        return self.mention_encoder(input_ids, attention_mask=attention_mask).last_hidden_state[:, 0, :]
+    def encode_mentions(self, input_ids: torch.LongTensor, attention_mask: torch.LongTensor, token_type_ids: torch.LongTensor) -> torch.Tensor:
+        outputs: SequenceClassifierOutput = self.mention_encoder(input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
+        return outputs.logits
 
     def encode_entities(self, input_ids: torch.LongTensor, attention_mask: torch.LongTensor, token_type_ids: torch.LongTensor) -> torch.Tensor:
-        return self.entity_encoder(input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids).last_hidden_state[:, 0, :]
+        outputs: SequenceClassifierOutput = self.entity_encoder(input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
+        return outputs.logits
 
-    # Score candidates given context input and label input
-    # If cand_encs is provided (pre-computed), cand_ves is ignored
     def similarity(
             self,
             mention_embeddings: torch.Tensor,
             entity_embeddings: torch.LongTensor,
             random_negs=True,
     ):  
-        # Train time. We compare with all elements of the batch
         if random_negs:
             # train on random negatives
             return mention_embeddings.mm(entity_embeddings.t()) # mention_embedding_dim x entity_embedding_dim
@@ -61,18 +64,20 @@ class BiEncoderRanker(PreTrainedModel):
             self, 
             mention_input_ids: torch.LongTensor,
             mention_attention_mask: torch.LongTensor,
+            mention_token_type_ids: torch.LongTensor,
             entity_input_ids: torch.LongTensor,
             entity_attention_mask: torch.LongTensor,
             entity_token_type_ids: torch.LongTensor,
-            labels: torch.LongTensor, #! Hard negative input labels
+            labels: Optional[torch.LongTensor] = None, #! Hard negative input labels
         ) -> Tuple[torch.Tensor, torch.Tensor]:
-        mention_embeddings = self.encode_mentions(mention_input_ids, mention_attention_mask)
+        mention_embeddings = self.encode_mentions(mention_input_ids, mention_attention_mask, mention_token_type_ids)
         entity_embeddings = self.encode_entities(entity_input_ids, entity_attention_mask, entity_token_type_ids)
         scores = self.similarity(mention_embeddings, entity_embeddings, labels is None)
         if labels is None:
             target = torch.arange(scores.size(0), dtype=torch.long, device=scores.device)
-            loss = F.cross_entropy(scores, target, reduction="mean")
+            loss_fct = nn.CrossEntropyLoss()
+            loss = loss_fct(scores, target)
         else:
-            loss_fct = nn.BCEWithLogitsLoss(reduction="mean")
+            loss_fct = nn.BCEWithLogitsLoss()
             loss = loss_fct(scores, labels)
         return loss, scores

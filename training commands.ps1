@@ -52,3 +52,13 @@ python blink/biencoder/train_biencoder_new.py `
 --train-batch-size 128 `
 --eval-batch-size 64 `
 --shuffle
+
+$env:PYTHONPATH = "."
+python blink/biencoder/train_biencoder_deberta.py `
+--data-path data/zeshel/blink_format `
+--output-path models/zeshel/deberta-v3-base `
+--learning-rate 2e-05 `
+--num-train-epochs 5 `
+--max-context-length 128 `
+--max-cand-length 128 `
+--train-batch-size 4

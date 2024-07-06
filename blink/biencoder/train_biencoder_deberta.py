@@ -16,14 +16,14 @@ import typer
 from transformers import (
     Trainer, 
     TrainingArguments,
-    DebertaConfig,
+    DebertaV2Config,
     AutoTokenizer
 )
 from datasets import load_dataset, Dataset
 
 from blink.biencoder.biencoder2 import (
-    DebertaBiencoderRankerConfig,
-    DebertaBiencoderRanker
+    DebertaV2BiencoderRankerConfig,
+    DebertaV2BiencoderRanker
 )
 import blink.candidate_ranking.utils as utils
 from blink.biencoder.data_process2 import tokenize_all
@@ -80,16 +80,21 @@ def run(
     Path(model_output_path).mkdir(exist_ok=True, parents=True)
     logger = utils.get_logger(output_path)
 
+    MODEL_NAME = "microsoft/deberta-v3-xsmall"
+
     # Init model
-    reranker_config = DebertaBiencoderRankerConfig(
-        DebertaConfig.from_pretrained("microsoft/deberta-v3-base"),
-        DebertaConfig.from_pretrained("microsoft/deberta-v3-base"),
+    mention_encoder_config = DebertaV2Config.from_pretrained(MODEL_NAME)
+    entity_encoder_config = DebertaV2Config.from_pretrained(MODEL_NAME)
+
+    reranker_config = DebertaV2BiencoderRankerConfig(
+        mention_encoder=mention_encoder_config,
+        entity_encoder=entity_encoder_config,
         embed_dim=embed_dim
     )
-    reranker = DebertaBiencoderRanker(reranker_config)
-    reranker.mention_encoder.from_pretrained("microsoft/deberta-v3-base")
-    reranker.entity_encoder.from_pretrained("microsoft/deberta-v3-base")
-    tokenizer = AutoTokenizer.from_pretrained("microsoft/deberta-v3-base")
+    reranker = DebertaV2BiencoderRanker(reranker_config)
+    reranker.mention_encoder.from_pretrained(MODEL_NAME, config=mention_encoder_config)
+    reranker.entity_encoder.from_pretrained(MODEL_NAME, config=entity_encoder_config)
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
     tokenizer.add_special_tokens({'additional_special_tokens': ['[B-MEN]', '[E-MEN]', '[ENT]']})
 
     pt_columns = [
@@ -124,6 +129,8 @@ def run(
     logger.info("Read %d train samples." % len(train_samples))
 
     valid_samples: Dataset = load_dataset('shomez/zeshel-blink', split='validation')
+    if debug: 
+        valid_samples = valid_samples.shuffle(seed=seed).select(range(10))
     valid_samples = valid_samples.map(
         tokenize_all, 
         fn_kwargs={
@@ -144,16 +151,20 @@ def run(
     # evaluate before training
     training_args = TrainingArguments(
         output_dir=output_path,
+        overwrite_output_dir=True,
         do_train=True,
         per_device_train_batch_size=train_batch_size,
         gradient_accumulation_steps=gradient_accumulation_steps,
-        eval_strategy="epoch",
+        # eval_strategy="epoch",
         save_strategy="epoch",
         num_train_epochs=num_train_epochs,
         max_grad_norm=max_grad_norm,
         learning_rate=learning_rate,
         warmup_ratio=warmup_proportion,
         fp16=True,
+        # save_strategy='steps',
+        # save_steps=10, 
+        # max_steps=10
     )
 
     trainer = Trainer(
@@ -161,7 +172,7 @@ def run(
         args=training_args,
         data_collator=collate_fn,
         train_dataset=train_samples,
-        eval_dataset=valid_samples,
+        # eval_dataset=valid_samples,
         tokenizer=tokenizer,
     )
     trainer.train()

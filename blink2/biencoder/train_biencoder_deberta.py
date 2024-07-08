@@ -6,30 +6,24 @@
 #
 import os
 from pathlib import Path
-from typing import Dict, TypedDict
-import torch
 import random
-import numpy as np
 import logging
 
 import typer
+import numpy as np
+import torch
 from transformers import (
     Trainer, 
     TrainingArguments,
     DebertaV2Config,
     AutoTokenizer
 )
-from datasets import load_dataset, Dataset
+from datasets import load_dataset
 
-from blink.biencoder.biencoder2 import (
-    DebertaV2BiencoderRankerConfig,
-    DebertaV2BiencoderRanker
-)
-import blink.candidate_ranking.utils as utils
-from blink.biencoder.data_process2 import tokenize_all
+from blink2.biencoder.preprocess import tokenize_all
+from blink2.biencoder.deberta_v2 import DebertaV2BiencoderRanker, DebertaV2BiencoderRankerConfig
 
 
-logger = None
 os.environ['TRANSFORMERS_NO_ADVISORY_WARNINGS'] = 'true'
 
 
@@ -56,7 +50,7 @@ def collate_fn(sample):
 
 def run(
     output_path: str = typer.Option(..., help="The output directory where the generated output file (model, etc.) is to be dumped."),
-    data_path: str = typer.Option("data/zeshel", help="The path to the train data."),
+    data_path: str = typer.Option('shomez/zeshel-blink', help="The path to the train data."),
     model_name: str = typer.Option("microsoft/deberta-v3-xsmall", help="Name of model architecture"),
     embed_dim: int = typer.Option(300, help="Output dimension of bi-encoders."),
     max_context_length: int = typer.Option(128, help="The maximum total context input sequence length after WordPiece tokenization. Sequences longer than this will be truncated, and sequences shorter than this will be padded."),
@@ -77,15 +71,11 @@ def run(
     if torch.cuda.device_count() > 0:
         torch.cuda.manual_seed_all(seed)
 
-    model_output_path = output_path
-    Path(model_output_path).mkdir(exist_ok=True, parents=True)
-    logger = utils.get_logger(output_path)
-
-    MODEL_NAME = model_name
+    Path(output_path).mkdir(exist_ok=True, parents=True)
 
     # Init model
-    mention_encoder_config = DebertaV2Config.from_pretrained(MODEL_NAME)
-    entity_encoder_config = DebertaV2Config.from_pretrained(MODEL_NAME)
+    mention_encoder_config = DebertaV2Config.from_pretrained(model_name)
+    entity_encoder_config = DebertaV2Config.from_pretrained(model_name)
 
     reranker_config = DebertaV2BiencoderRankerConfig(
         mention_encoder=mention_encoder_config,
@@ -93,61 +83,50 @@ def run(
         embed_dim=embed_dim
     )
     reranker = DebertaV2BiencoderRanker(reranker_config)
-    reranker.mention_encoder.from_pretrained(MODEL_NAME, config=mention_encoder_config)
-    reranker.entity_encoder.from_pretrained(MODEL_NAME, config=entity_encoder_config)
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    reranker.mention_encoder.from_pretrained(model_name, config=mention_encoder_config)
+    reranker.entity_encoder.from_pretrained(model_name, config=entity_encoder_config)
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
     tokenizer.add_special_tokens({'additional_special_tokens': ['[B-MEN]', '[E-MEN]', '[ENT]']})
 
-    pt_columns = [
-        "mention_input_ids", 
-        "mention_attention_mask", 
-        "mention_token_type_ids", 
-        "entity_input_ids", 
-        "entity_attention_mask", 
-        "entity_token_type_ids", 
-        'label_idx',
-        'src'
-    ]
-    # Load train data
-    train_samples: Dataset = load_dataset('shomez/zeshel-blink', split='train')
-    if debug: 
-        train_samples = train_samples.shuffle(seed=seed).select(range(200))
-    train_samples = train_samples.map(
-        tokenize_all, 
-        fn_kwargs={
-            'tokenizer': tokenizer,
-            'max_context_length': max_context_length,
-            'max_cand_length': max_cand_length,
-            'mention_start_token': '[B-MEN]',
-            'mention_end_token': '[E-MEN]',
-            'entity_sep_token': '[ENT]',
-        }, 
-        batched=False, 
-        num_proc=4, 
-        desc="Representation: "
+    # Load dataset and Preprocess
+    ds = (
+        load_dataset(
+            data_path, 
+            split=(
+                {
+                    'train': 'train[0:40]', 
+                    'validation': 'validation[:20]', 
+                    'test': 'test[0:20]'
+                }
+                if debug 
+                else {'train': 'train'}
+            )
+        )
+        .rename_columns({'label': 'text', 'label_title': 'title'})
+        .map(
+            tokenize_all, 
+            fn_kwargs={
+                'tokenizer': tokenizer,
+                'max_context_length': max_context_length,
+                'max_cand_length': max_cand_length,
+                'mention_start_token': '[B-MEN]',
+                'mention_end_token': '[E-MEN]',
+                'entity_sep_token': '[ENT]',
+            }, 
+            batched=False, 
+            num_proc=4, 
+            desc="Representation: "
+        )
+        .with_format(type='torch', columns=[
+            "mention_input_ids", 
+            "mention_attention_mask", 
+            "mention_token_type_ids", 
+            "entity_input_ids", 
+            "entity_attention_mask", 
+            "entity_token_type_ids", 
+            'label_idx',
+        ])
     )
-    train_samples.set_format(type='torch', columns=pt_columns)
-    logger.info("Read %d train samples." % len(train_samples))
-
-    valid_samples: Dataset = load_dataset('shomez/zeshel-blink', split='validation')
-    if debug: 
-        valid_samples = valid_samples.shuffle(seed=seed).select(range(10))
-    valid_samples = valid_samples.map(
-        tokenize_all, 
-        fn_kwargs={
-            'tokenizer': tokenizer,
-            'max_context_length': max_context_length,
-            'max_cand_length': max_cand_length,
-            'mention_start_token': '[B-MEN]',
-            'mention_end_token': '[E-MEN]',
-            'entity_sep_token': '[ENT]',
-        }, 
-        batched=False, 
-        num_proc=4, 
-        desc="Representation: "
-    )
-    valid_samples.set_format(type='torch', columns=pt_columns)
-    logger.info("Read %d valid samples." % len(valid_samples))
 
     # evaluate before training
     training_args = TrainingArguments(
@@ -157,23 +136,23 @@ def run(
         per_device_train_batch_size=train_batch_size,
         gradient_accumulation_steps=gradient_accumulation_steps,
         # eval_strategy="epoch",
-        save_strategy="epoch",
         num_train_epochs=num_train_epochs,
         max_grad_norm=max_grad_norm,
         learning_rate=learning_rate,
         warmup_ratio=warmup_proportion,
         fp16=True,
-        # save_strategy='steps',
-        # save_steps=10, 
-        # max_steps=10
+        # save_strategy="epoch",
+        save_strategy='steps',
+        save_steps=10, 
+        max_steps=10
     )
 
     trainer = Trainer(
         model=reranker,
         args=training_args,
         data_collator=collate_fn,
-        train_dataset=train_samples,
-        # eval_dataset=valid_samples,
+        train_dataset=ds['train'],
+        # eval_dataset=ds['validation'],
         tokenizer=tokenizer,
     )
     trainer.train()

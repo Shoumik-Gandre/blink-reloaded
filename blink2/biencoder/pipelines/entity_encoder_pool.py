@@ -16,7 +16,7 @@ from ..preprocess import tokenize_entity
         return_tensors (`bool`, *optional*):
             If `True`, returns a tensor according to the specified framework, otherwise returns a list.""",
 )
-class EntityEncoderPipeline(Pipeline):
+class EntityEncoderPoolPipeline(Pipeline):
     """
     Feature extraction pipeline uses no model head. This pipeline extracts the hidden states from the base
     transformer, which can be used as features in downstream tasks.

@@ -5,28 +5,13 @@
 # LICENSE file in the root directory of this source tree.
 #
 
-import logging
-import multiprocessing as mp
-from typing import Any, Dict, List, Optional, TypedDict, Iterable
+from typing import Any
 
 import torch
 from transformers import PreTrainedTokenizer, BatchEncoding
 from transformers.tokenization_utils import PaddingStrategy, TruncationStrategy
 
-
-class MentionInput(TypedDict):
-    mention: str
-    context_left: str
-    context_right: str
-
-class EntityInput(TypedDict):
-    title: str
-    text: str
-
-
-class ProcessInput(MentionInput, EntityInput):
-    label_id: int
-    world: Optional[str]
+from .data_types import EntityInput, MentionInput, ProcessInput
 
 
 def tokenize_mention(

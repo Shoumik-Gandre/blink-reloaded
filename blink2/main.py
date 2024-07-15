@@ -73,11 +73,13 @@ def main(
         device=-1,
         batch_size=64,
         tokenize_kwargs={
+            'truncation': True,
             'max_length': 128,
+            'prepend_batch_axis': True,
         },
     )
 
-    mention_embeddings = mention_encoder(mentions)
+    mention_embeddings = mention_encoder(mentions, tokenize_kwargs={'truncation': True, 'max_length': 128})
     
     entities_ds = load_from_disk(entities_path)
     entities_ds.add_faiss_index(column='embeddings', metric_type=faiss.METRIC_INNER_PRODUCT)

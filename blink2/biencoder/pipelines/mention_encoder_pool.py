@@ -43,21 +43,22 @@ class MentionEncoderPoolPipeline(Pipeline):
             inputs,
             tokenizer=self.tokenizer,
             return_tensors=self.framework,
+            prepend_batch_axis=True,
             **tokenize_kwargs
         )
         return model_inputs
 
     def _forward(self, model_inputs):
-        model_outputs = self.model(**model_inputs)
+        model_outputs = self.model(**model_inputs).pooler_output
         return model_outputs
 
     def postprocess(self, model_outputs: BaseModelOutputWithPooling, return_tensors=False):
         if return_tensors:
-            return model_outputs.pooler_output.squeeze(0)
+            return model_outputs.squeeze(0)
         if self.framework == "pt":
-            return model_outputs.pooler_output.squeeze(0).tolist()
+            return model_outputs.squeeze(0).tolist()
         elif self.framework == "tf":
-            return model_outputs.pooler_output.numpy().tolist()
+            return model_outputs.numpy().tolist()
 
     def __call__(self, *args, **kwargs):
         """

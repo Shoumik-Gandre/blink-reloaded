@@ -1,4 +1,4 @@
-from typing import TypedDict
+from typing import Optional, TypedDict
 
 
 class MentionInput(TypedDict):
@@ -10,3 +10,8 @@ class MentionInput(TypedDict):
 class EntityInput(TypedDict):
     text: str
     title: str
+
+
+class ProcessInput(MentionInput, EntityInput):
+    label_id: int
+    world: Optional[str]
